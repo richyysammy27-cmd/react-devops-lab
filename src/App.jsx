@@ -1,20 +1,123 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import "./App.css";
 
 function App() {
-  const [count, setCount] = useState(0);
-  const appName = import.meta.env.VITE_APP_NAME || "Vite + React";
-  const apiUrl = import.meta.env.VITE_API_URL || "Not configured";
+  const appName = import.meta.env.VITE_APP_NAME || "React Docker Lab";
+  const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/$/, "");
+
+  const [status, setStatus] = useState("checking"); // "checking" | "online" | "offline"
+  const [apiData, setApiData] = useState(null);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  const checkBackend = useCallback(async () => {
+    setStatus("checking");
+    setErrorMsg("");
+
+    try {
+      const [healthRes, configRes] = await Promise.all([
+        fetch(`${apiUrl}/health`),
+        fetch(`${apiUrl}/config`),
+      ]);
+
+      if (!healthRes.ok || !configRes.ok) {
+        throw new Error(`HTTP error (${healthRes.status} / ${configRes.status})`);
+      }
+
+      const healthJson = await healthRes.json();
+      const configJson = await configRes.json();
+
+      setApiData({
+        health: healthJson.status,
+        env: configJson.app_env,
+        version: configJson.app_version,
+      });
+      setStatus("online");
+    } catch (err) {
+      setStatus("offline");
+      setErrorMsg(err.message || "Unable to reach backend API");
+      setApiData(null);
+    }
+  }, [apiUrl]);
+
+  useEffect(() => {
+    checkBackend();
+  }, [checkBackend]);
+
+  const badgeColor =
+    status === "online" ? "#16a34a" : status === "offline" ? "#dc2626" : "#d97706";
 
   return (
-    <main style={{ padding: "2rem", fontFamily: "sans-serif" }}>
-      <h1>{appName}</h1>
-      <p>
-        <strong>Configured API URL:</strong> <code>{apiUrl}</code>
-      </p>
-      <button onClick={() => setCount((c) => c + 1)}>
-        Count is {count}
-      </button>
+    <main style={{ maxWidth: "540px", margin: "3rem auto", padding: "1.5rem", fontFamily: "system-ui, sans-serif" }}>
+      <h1 style={{ marginBottom: "0.25rem" }}>{appName}</h1>
+      <p style={{ color: "#666", marginTop: 0 }}>Full-Stack Container Dashboard</p>
+
+      <div
+        style={{
+          border: "1px solid #e5e7eb",
+          borderRadius: "12px",
+          padding: "1.25rem",
+          marginTop: "1.5rem",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <strong>Backend API Status</strong>
+          <span
+            style={{
+              backgroundColor: badgeColor,
+              color: "#fff",
+              padding: "0.25rem 0.75rem",
+              borderRadius: "999px",
+              fontSize: "0.85rem",
+              fontWeight: 600,
+              textTransform: "uppercase",
+            }}
+          >
+            {status}
+          </span>
+        </div>
+
+        <p style={{ fontSize: "0.9rem", marginTop: "1rem" }}>
+          <strong>Endpoint:</strong> <code>{apiUrl}</code>
+        </p>
+
+        {status === "online" && apiData && (
+          <ul style={{ lineHeight: "1.8", paddingLeft: "1.2rem" }}>
+            <li>
+              <strong>Health:</strong> {apiData.health}
+            </li>
+            <li>
+              <strong>Environment:</strong> <code>{apiData.env}</code>
+            </li>
+            <li>
+              <strong>API Version:</strong> <code>{apiData.version}</code>
+            </li>
+          </ul>
+        )}
+
+        {status === "offline" && (
+          <p style={{ color: "#dc2626", fontSize: "0.9rem" }}>
+            Connection failed: {errorMsg} (If hosted on Render free tier, wait ~30s for wake-up and retry.)
+          </p>
+        )}
+
+        <button
+          onClick={checkBackend}
+          disabled={status === "checking"}
+          style={{
+            marginTop: "0.75rem",
+            padding: "0.6rem 1rem",
+            borderRadius: "8px",
+            border: "none",
+            backgroundColor: "#2563eb",
+            color: "#fff",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          {status === "checking" ? "Pinging API..." : "Refresh Status"}
+        </button>
+      </div>
     </main>
   );
 }
