@@ -3,9 +3,9 @@ import "./App.css";
 
 function App() {
   const appName = import.meta.env.VITE_APP_NAME || "React Docker Lab";
-  const apiUrl = (import.meta.env.VITE_API_URL || "http://localhost:8080").replace(/\/$/, "");
+  const apiUrl = (import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
 
-  const [status, setStatus] = useState("checking"); // "checking" | "online" | "offline"
+  const [status, setStatus] = useState("checking");
   const [apiData, setApiData] = useState(null);
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -13,23 +13,30 @@ function App() {
     setStatus("checking");
     setErrorMsg("");
 
-    try {
-      const [healthRes, configRes] = await Promise.all([
-        fetch(`${apiUrl}/health`),
-        fetch(`${apiUrl}/config`),
-      ]);
+    if (!apiUrl || apiUrl.includes("localhost")) {
+      setStatus("offline");
+      setErrorMsg("VITE_API_URL is missing or still pointing to localhost.");
+      setApiData(null);
+      return;
+    }
 
-      if (!healthRes.ok || !configRes.ok) {
-        throw new Error(`HTTP error (${healthRes.status} / ${configRes.status})`);
+    try {
+      const healthRes = await fetch(`${apiUrl}/health`);
+      if (!healthRes.ok) {
+        throw new Error(`Health check failed (HTTP ${healthRes.status})`);
+      }
+      const healthJson = await healthRes.json();
+
+      let configJson = null;
+      const configRes = await fetch(`${apiUrl}/config`);
+      if (configRes.ok) {
+        configJson = await configRes.json();
       }
 
-      const healthJson = await healthRes.json();
-      const configJson = await configRes.json();
-
       setApiData({
-        health: healthJson.status,
-        env: configJson.app_env,
-        version: configJson.app_version,
+        health: healthJson.status || "healthy",
+        env: configJson?.app_env || "n/a",
+        version: configJson?.app_version || "n/a",
       });
       setStatus("online");
     } catch (err) {
@@ -78,26 +85,20 @@ function App() {
         </div>
 
         <p style={{ fontSize: "0.9rem", marginTop: "1rem" }}>
-          <strong>Endpoint:</strong> <code>{apiUrl}</code>
+          <strong>Endpoint:</strong> <code>{apiUrl || "Not set"}</code>
         </p>
 
         {status === "online" && apiData && (
           <ul style={{ lineHeight: "1.8", paddingLeft: "1.2rem" }}>
-            <li>
-              <strong>Health:</strong> {apiData.health}
-            </li>
-            <li>
-              <strong>Environment:</strong> <code>{apiData.env}</code>
-            </li>
-            <li>
-              <strong>API Version:</strong> <code>{apiData.version}</code>
-            </li>
+            <li><strong>Health:</strong> {apiData.health}</li>
+            <li><strong>Environment:</strong> <code>{apiData.env}</code></li>
+            <li><strong>API Version:</strong> <code>{apiData.version}</code></li>
           </ul>
         )}
 
         {status === "offline" && (
           <p style={{ color: "#dc2626", fontSize: "0.9rem" }}>
-            Connection failed: {errorMsg} (If hosted on Render free tier, wait ~30s for wake-up and retry.)
+            Connection failed: {errorMsg}
           </p>
         )}
 
